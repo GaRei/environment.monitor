@@ -18,6 +18,7 @@ import java.util.WeakHashMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
 
 public class ScheduleRunnerImpl implements ScheduleRunner {
 
@@ -78,6 +79,7 @@ public class ScheduleRunnerImpl implements ScheduleRunner {
       this.executor.awaitTermination(40, TimeUnit.SECONDS);
     } catch (InterruptedException e) {
       this.executor.shutdownNow();
+
     }
   }
 
@@ -112,6 +114,7 @@ public class ScheduleRunnerImpl implements ScheduleRunner {
           log.error("\n\n Schedule service going to restart! \n\n");
           executor.shutdown();
           scheduleRunnerImpl = new ScheduleRunnerImpl(scheduleRunnerImpl.classLoader);
+          scheduleRunnerImpl.runTasks();
           throw new Exception("The " + task.getKey() + " task does not respond too long time.");
         }
       }
@@ -158,16 +161,22 @@ public class ScheduleRunnerImpl implements ScheduleRunner {
 
     @Override
     public void run() {
+
+      if (Thread.interrupted()) {
+        log.info("Monitor Job: " + config.getEnvName() + " is interrupted. No new verifications will be done");
+        return;
+      }
+
       try {
         this.lastUpdate = new Date();
         ScheduleRunnerImpl.this.selfDiagnostic();
         log.info("\n====>Updating status for " + config.getEnvName() + " environment.");
 
-        Map<Resource, ResourceStatus> status = collector.updateStatus();
+        Set<ResourceStatus> status = collector.updateStatus();
 
-        MongoConnector.getInstance().getLastStatusDAO().insert(config.getEnvName(), status.values());
-        MongoConnector.getInstance().getMonthDetailDAO().insert(config.getEnvName(), status.values());
-        MongoConnector.getInstance().getResourceDAO().insert(status.keySet());
+        MongoConnector.getInstance().getLastStatusDAO().insert(config.getEnvName(), status);
+        MongoConnector.getInstance().getMonthDetailDAO().insert(config.getEnvName(), status);
+        MongoConnector.getInstance().getResourceDAO().insert(status.stream().map(ResourceStatus::getResource).collect(Collectors.toSet()));
         this.updateListeners(status);
 
       } catch (Exception e1) {
@@ -175,7 +184,7 @@ public class ScheduleRunnerImpl implements ScheduleRunner {
       }
     }
 
-    private void updateListeners(Map<Resource, ResourceStatus> status) {
+    private void updateListeners(Set<ResourceStatus> status) {
       Iterator<UpdateStatusListener> iListeners = listeners.iterator();
       while (iListeners.hasNext()) {
         UpdateStatusListener listener = iListeners.next();
@@ -191,6 +200,8 @@ public class ScheduleRunnerImpl implements ScheduleRunner {
         }
       }
     }
+
+
   }
 
 }
