@@ -1,9 +1,8 @@
 package org.yagel.monitor.exception;
 
-public class DiagnosticException extends RuntimeException {
+public class DiagnosticException extends Exception {
 
-
-  public DiagnosticException(Throwable cause) {
-    super(cause);
+  public DiagnosticException(String message) {
+    super(message);
   }
 }

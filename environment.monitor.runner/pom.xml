@@ -49,7 +49,18 @@
             <version>${project.version}</version>
         </dependency>
 
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+
     </dependencies>
+
 
     <build>
         <plugins>
@@ -74,7 +85,7 @@
                 <artifactId>maven-surefire-plugin</artifactId>
                 <configuration>
                     <excludes>
-                        <exclude>org.yagel.monitor.runner.test.intergation.**</exclude>
+                        <exclude>org.yagel.monitor.runner.test.integration.**</exclude>
                     </excludes>
                 </configuration>
 
@@ -84,7 +95,7 @@
                 <artifactId>maven-failsafe-plugin</artifactId>
                 <configuration>
                     <includes>
-                        <include>org.yagel.monitor.runner.test.intergation.**</include>
+                        <include>org.yagel.monitor.runner.test.integration.**</include>
                     </includes>
                     <systemProperties>
                         <property>

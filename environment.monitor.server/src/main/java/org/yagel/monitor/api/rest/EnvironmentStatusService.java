@@ -1,21 +1,18 @@
 package org.yagel.monitor.api.rest;
 
 
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestMethod;
-import org.springframework.web.bind.annotation.RequestParam;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 import org.yagel.monitor.EnvironmentConfig;
 import org.yagel.monitor.ResourceStatus;
-import org.yagel.monitor.ScheduleRunnerImpl;
+import org.yagel.monitor.ScheduleRunner;
 import org.yagel.monitor.api.rest.dto.EnvironmentStatusDTO;
 import org.yagel.monitor.mongo.AggregatedStatusDAO;
-import org.yagel.monitor.mongo.MongoConnector;
 import org.yagel.monitor.mongo.ResourceLastStatusDAO;
 import org.yagel.monitor.resource.AggregatedResourceStatus;
+import org.yagel.monitor.resource.Status;
 
 import java.util.Comparator;
 import java.util.Date;
@@ -28,12 +25,21 @@ import java.util.stream.Collectors;
 @RequestMapping("/environment/status/")
 public class EnvironmentStatusService extends AbstractService {
 
+  @Autowired
+  private ResourceLastStatusDAO lastStatusDAO;
+
+  @Autowired
+  private AggregatedStatusDAO aggregatedStatusDAO;
+
+  @Autowired
+  ScheduleRunner runner;
 
   @RequestMapping(value = "current/{environmentName}", method = RequestMethod.GET)
   public ResponseEntity<EnvironmentStatusDTO> getEnvironmentStatus(@PathVariable("environmentName") String environmentName) {
-    List<ResourceStatus> resourceStatuses = MongoConnector.getInstance().getLastStatusDAO().find(environmentName);
+    List<ResourceStatus> resourceStatuses = lastStatusDAO.find(environmentName);
 
     EnvironmentStatusDTO environmentStatus = new EnvironmentStatusDTO(environmentName, resourceStatuses);
+    environmentStatus.setOverallStatus(getOverallStatus(resourceStatuses));
     return ResponseEntity.ok(environmentStatus);
   }
 
@@ -41,29 +47,30 @@ public class EnvironmentStatusService extends AbstractService {
   @RequestMapping(value = "current", method = RequestMethod.GET)
   public ResponseEntity<List<EnvironmentStatusDTO>> getOverallStatus() {
 
-    List<String> envs = ScheduleRunnerImpl.getInstance().getConfig().getEnvironments()
+    List<String> envs = runner.getConfig().getEnvironments()
         .stream()
         .map(EnvironmentConfig::getEnvName)
         .collect(Collectors.toList());
 
-    final ResourceLastStatusDAO statusDAO = MongoConnector.getInstance().getLastStatusDAO();
+
 
     List<EnvironmentStatusDTO> statusList = envs
         .stream()
         .sorted(String::compareTo)
         .map(env -> {
-          List<ResourceStatus> statuses = statusDAO.find(env)
+          List<ResourceStatus> statuses = lastStatusDAO.find(env)
               .stream()
               .sorted(Comparator.comparing(o -> o.getResource().getName()))
               .collect(Collectors.toList());
 
-          return new EnvironmentStatusDTO(env, statuses);
+          EnvironmentStatusDTO environmentStatus = new EnvironmentStatusDTO(env, statuses);
+          environmentStatus.setOverallStatus(getOverallStatus(statuses));
+          return environmentStatus;
         })
         .collect(Collectors.toList());
 
     return ResponseEntity.ok(statusList);
   }
-
 
   @RequestMapping(value = "aggregated/{environmentName}", method = RequestMethod.GET)
   public ResponseEntity<List<AggregatedResourceStatus>> getStatus(
@@ -72,12 +79,23 @@ public class EnvironmentStatusService extends AbstractService {
       @RequestParam("startDate") @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Date startDate,
       @RequestParam("endDate") @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Date endDate) {
 
-    AggregatedStatusDAO detailDAO = MongoConnector.getInstance().getAggregatedStatusDAO();
-    List<AggregatedResourceStatus> aggStatusses = detailDAO.getAggregatedStatuses(environmentName, resources, startDate, endDate)
+
+    List<AggregatedResourceStatus> aggStatusses = aggregatedStatusDAO.getAggregatedStatuses(environmentName, resources, startDate, endDate)
         .stream()
         .sorted(Comparator.comparing(o -> o.getResource().getName()))
         .collect(Collectors.toList());
 
     return ResponseEntity.ok(aggStatusses);
+  }
+
+  private Status getOverallStatus(List<ResourceStatus> statuses) {
+    List<Integer> statusesIds = statuses
+            .stream()
+            .map(r -> r.getStatus().getSeriaNumber())
+            .collect(Collectors.toList());
+    return statusesIds.stream().allMatch(e -> e == Status.Unknown.getSeriaNumber()) ?
+            Status.Unknown :
+            Status.fromSerialNumber(statusesIds.stream().filter(e -> e != Status.Unknown.getSeriaNumber()).max(Integer::compare).get());
+
   }
 }
